@@ -7,6 +7,7 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
+'@IgnoreModule IntegerDataType,UDTMemberNotUsed,ProcedureNotUsed,AssignmentNotUsed,ValueRequired,SuspiciousPredeclaredInstanceAccess,WriteOnlyProperty,IndexedDefaultMemberAccess,MisleadingByRefParameter,HungarianNotation,ParameterCanBeByVal
 '''=============================================================================
 ''' VBA Fast Dictionary
 ''' --------------------------------------------------
@@ -82,8 +83,14 @@ Attribute VB_Exposed = False
 ''         - Returns the current % load for the hash map containing indexes
 ''==============================================================================
 
+''' Updated Version from (Build: 2.10+) - (12/10/2024)
+''' Changes: Include two Properties
+''' > Public Property Get KeyByIndex(ByRef Index As Long) As Variant
+''' > Public Property Get Index(ByRef Key As Variant) As Long
+
 '@PredeclaredId
 Option Explicit
+'@Ignore RedundantOption
 Option Compare Binary
 
 #If Mac Then
@@ -541,14 +548,14 @@ Private Function GetIndex(ByRef Key As Variant _
             m = hmNumber
             Mem.Common(0).d = Key
         End If
-        Const n1& = 1201, n2& = 2701, n3& = 131, n4& = 28571
         Const infOrNaN As Integer = &H7FF0 'Exponent bits for Double Float
         #If x64 Then
             Const maskLL As LongLong = HashMeta.[_maskHM]
             Const iSignBit As Integer = &H8000
             Const factionalBits As LongLong = &HFFFFFFFFFFFFF^
             Const normalBit As LongLong = factionalBits + 1
-            Dim h As LongLong, bitFinder As LongLong
+            Const n1 As Long = 1201: Const n4 As Long = 28571
+            Dim h As LongLong: Dim bitFinder As LongLong
             Dim highBits As Integer: highBits = Mem.RInt(3)
             '
             If (highBits And infOrNaN) = infOrNaN Then
@@ -561,6 +568,7 @@ Private Function GetIndex(ByRef Key As Variant _
                 hVal = CLng(h And maskLL) Or m
             End If
         #Else
+            Const n1 As Long = 1201: Const n2 As Long = 2701: Const n3 As Long = 131: Const n4 As Long = 28571
             If (Mem.RInt(3) And infOrNaN) = infOrNaN Then m = 0
             hVal = (Mem.RInt(0) * n4 + Mem.RInt(1) * n3 _
                   + Mem.RInt(2) * n2 + Mem.RInt(3) * n1) And [_maskHM] Or m
@@ -760,11 +768,66 @@ Public Property Get Items() As Variant()
     End If
 End Property
 
+Public Property Get Index(ByRef Key As Variant) As Long
+  Index = GetIndex(Key) + 1
+End Property
+
+Public Property Get KeyByIndex(ByVal Index As Long) As Variant
+  
+  Dim Counter As Long: Dim ActiveCounter As Long
+  
+  If Vars.UsedCount = 0 Then Exit Property
+  If Index < 1 Or Index > Vars.UsedCount Then Exit Property
+  
+#If x64 Then
+  If Vars.UsedCount = Vars.Count Then
+    If Vars.Meta(Index - 1) And hmObject Then
+      Set KeyByIndex = Vars.Keys(Index - 1)
+    Else
+      KeyByIndex = Vars.Keys(Index - 1)
+    End If
+  Else
+    'Enum required since we could have 'removed' items
+    ActiveCounter = 0
+    For Counter = 0 To Vars.Count - 1
+      If Vars.Meta(Counter) <> hmRemoved Then
+        ActiveCounter = ActiveCounter + 1
+        If ActiveCounter = Index Then
+          If Vars.Meta(Counter) And hmObject Then
+            Set KeyByIndex = Vars.Keys(Counter)
+          Else
+            KeyByIndex = Vars.Keys(Counter)
+          End If
+          Exit For
+        End If
+      End If
+    Next
+  End If
+#Else
+  'Enum required since we could have 'removed' items
+  ActiveCounter = 0
+  For Counter = 0 To Vars.Count - 1
+    If Vars.Keys(Counter).Meta <> hmRemoved Then
+      ActiveCounter = ActiveCounter + 1
+      If ActiveCounter = Index Then
+        If Vars.Keys(Counter).IsKeyObj Then
+          Set KeyByIndex = Vars.Keys(Counter).Value
+        Else
+          KeyByIndex = Vars.Keys(Counter).Value
+        End If
+        Exit For
+      End If
+    End If
+  Next
+#End If
+  
+End Property
+
 'Change an existing key value
 'Raises Error:
 '   -   9: invalid OldKey (key is not associated with any element)
 '   - 457: invalid NewKey (key is already associated with an element)
-Public Property Let Key(ByRef OldKey As Variant, ByRef NewKey As Variant)
+Public Property Let Key(ByVal OldKey As Variant, ByVal NewKey As Variant)
     Dim hVal As Long
     Dim groupSlot As Long
     Dim posInGroup As Long
@@ -896,7 +959,6 @@ End Sub
 'Raises Error:
 '   -   9: invalid key (key is not associated with any element)
 Public Sub Remove(ByRef Key As Variant)
-    Dim hVal As Long
     Dim groupSlot As Long
     Dim posInGroup As Long
     Dim lastPos As Long
@@ -1221,6 +1283,7 @@ Friend Sub InitStructs(ByRef v As DictionaryVariables _
         Loop
         If (tempPtr <> nullPtr) And (tempPtr <> Vars.Dealloc.ThisPtr) Then
             'Link to the 'real' def instance
+            '@Ignore ImplicitUnboundDefaultMemberAccess
             h.saP.pvData = VarPtr(temp)
             Mem.RPtr(0) = tempPtr 'Unmanaged - ref count not increased
             Set Vars.DefInstance = temp
@@ -1274,6 +1337,7 @@ Public Function Factory() As Dictionary
 End Function
 
 Public Property Get HashVal(ByRef Key As Variant) As Long
+    '@Ignore FunctionReturnValueDiscarded
     GetIndex Key, HashVal, hashOnly:=True
 End Property
 
